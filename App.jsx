@@ -15,6 +15,23 @@ function avg(scores) {
   return (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
 }
 
+// Weighted score: sum(score * marketWeight) / sum(marketWeight), normalized to 1–10
+function weightedScore(scores, dimensions) {
+  if (!dimensions?.length) return 0;
+  const totalWeight = dimensions.reduce((s, d) => s + d.marketWeight, 0);
+  const weighted    = scores.reduce((s, score, i) => s + score * (dimensions[i]?.marketWeight ?? 1), 0);
+  return (weighted / totalWeight).toFixed(1);
+}
+
+// Color for a weighted score value
+function wScoreColor(val) {
+  const n = parseFloat(val);
+  if (n >= 8)   return "#00B4D8";
+  if (n >= 6.5) return "#66BB6A";
+  if (n >= 5)   return "#FBC02D";
+  return "#E53935";
+}
+
 function ThreatBadge({ level }) {
   if (!level) return null;
   return (
@@ -73,6 +90,10 @@ function TierFilterBar({ value, onChange }) {
 }
 
 function MatrixView({ vendors, dimensions, tiers, sortDim, onSortDim }) {
+  // sortDim === "weighted" | "avg" | null | number (dimension index)
+  const SORT_WEIGHTED = "weighted";
+  const SORT_AVG      = "avg";
+
   return (
     <div style={{ overflowX: "auto", paddingBottom: 8 }}>
       <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 11 }}>
@@ -82,31 +103,54 @@ function MatrixView({ vendors, dimensions, tiers, sortDim, onSortDim }) {
             {dimensions.map((d, i) => (
               <th key={d.id} onClick={() => onSortDim(sortDim === i ? null : i)} style={{ textAlign: "center", padding: "8px 4px", fontSize: 9, fontWeight: 600, cursor: "pointer", color: sortDim === i ? "#00B4D8" : "#64748b", borderBottom: "1px solid #1e293b", whiteSpace: "nowrap", minWidth: 64, userSelect: "none" }}>
                 {d.label.split(" / ")[0]}{sortDim === i ? " ▼" : ""}
+                <div style={{ fontSize: 8, color: "#475569", fontWeight: 400, marginTop: 1 }}>w{d.marketWeight}</div>
               </th>
             ))}
-            <th style={{ textAlign: "center", padding: "8px 6px", color: "#64748b", fontSize: 9, fontWeight: 600, borderBottom: "1px solid #1e293b", minWidth: 44 }}>AVG</th>
+            {/* Simple avg column */}
+            <th onClick={() => onSortDim(sortDim === SORT_AVG ? null : SORT_AVG)} style={{ textAlign: "center", padding: "8px 6px", fontSize: 9, fontWeight: 600, cursor: "pointer", color: sortDim === SORT_AVG ? "#94a3b8" : "#64748b", borderBottom: "1px solid #1e293b", minWidth: 44, userSelect: "none", whiteSpace: "nowrap" }}>
+              AVG{sortDim === SORT_AVG ? " ▼" : ""}
+            </th>
+            {/* Weighted score column — hero column */}
+            <th onClick={() => onSortDim(sortDim === SORT_WEIGHTED ? null : SORT_WEIGHTED)} style={{ textAlign: "center", padding: "8px 8px", fontSize: 9, fontWeight: 700, cursor: "pointer", borderBottom: "2px solid #00B4D8", minWidth: 60, userSelect: "none", whiteSpace: "nowrap", background: "rgba(0,180,216,0.06)", color: sortDim === SORT_WEIGHTED ? "#00B4D8" : "#7dd3fc" }}>
+              WTD{sortDim === SORT_WEIGHTED ? " ▼" : " ↕"}
+              <div style={{ fontSize: 8, fontWeight: 400, color: "#475569", marginTop: 1 }}>mkt-weighted</div>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {vendors.map(v => (
-            <tr key={v.id} style={{ background: v.isSAS ? "rgba(0,180,216,0.05)" : "transparent" }}>
-              <td style={{ padding: "6px 10px", position: "sticky", left: 0, background: v.isSAS ? "rgba(0,180,216,0.07)" : "#0a0a1a", zIndex: 1, borderBottom: "1px solid #111827" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <TierBadge tier={v.tier} tiers={tiers} />
-                  <span style={{ fontWeight: v.isSAS ? 700 : 500, color: v.isSAS ? "#00B4D8" : "#e2e8f0", fontSize: 11 }}>{v.name}</span>
-                  {v.threat && <ThreatBadge level={v.threat} />}
-                </div>
-              </td>
-              {v.scores.map((s, i) => (
-                <td key={i} style={{ textAlign: "center", padding: "6px 4px", borderBottom: "1px solid #111827" }}>
-                  <ScoreChip score={s} isSAS={v.isSAS} />
+          {vendors.map(v => {
+            const simpleAvg = avg(v.scores);
+            const wtd       = weightedScore(v.scores, dimensions);
+            return (
+              <tr key={v.id} style={{ background: v.isSAS ? "rgba(0,180,216,0.05)" : "transparent" }}>
+                <td style={{ padding: "6px 10px", position: "sticky", left: 0, background: v.isSAS ? "rgba(0,180,216,0.07)" : "#0a0a1a", zIndex: 1, borderBottom: "1px solid #111827" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <TierBadge tier={v.tier} tiers={tiers} />
+                    <span style={{ fontWeight: v.isSAS ? 700 : 500, color: v.isSAS ? "#00B4D8" : "#e2e8f0", fontSize: 11 }}>{v.name}</span>
+                    {v.threat && <ThreatBadge level={v.threat} />}
+                  </div>
                 </td>
-              ))}
-              <td style={{ textAlign: "center", padding: "6px", borderBottom: "1px solid #111827", fontWeight: 700, fontFamily: "monospace", color: v.isSAS ? "#00B4D8" : "#e2e8f0", fontSize: 12 }}>
-                {avg(v.scores)}
-              </td>
-            </tr>
-          ))}
+                {v.scores.map((s, i) => (
+                  <td key={i} style={{ textAlign: "center", padding: "6px 4px", borderBottom: "1px solid #111827" }}>
+                    <ScoreChip score={s} isSAS={v.isSAS} />
+                  </td>
+                ))}
+                {/* Simple avg */}
+                <td style={{ textAlign: "center", padding: "6px", borderBottom: "1px solid #111827", fontFamily: "monospace", color: "#64748b", fontSize: 11 }}>
+                  {simpleAvg}
+                </td>
+                {/* Weighted score — styled prominently */}
+                <td style={{ textAlign: "center", padding: "6px 8px", borderBottom: "1px solid #111827", background: "rgba(0,180,216,0.04)" }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, fontFamily: "monospace", color: wScoreColor(wtd) }}>
+                    {wtd}
+                  </span>
+                  {v.isSAS && (
+                    <div style={{ fontSize: 8, color: "#475569", fontFamily: "monospace" }}>baseline</div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -115,6 +159,9 @@ function MatrixView({ vendors, dimensions, tiers, sortDim, onSortDim }) {
 
 function CompetitorCard({ vendor, dimensions, tiers, sasScores }) {
   const [open, setOpen] = useState(false);
+  const wtd    = weightedScore(vendor.scores, dimensions);
+  const sasWtd = weightedScore(sasScores, dimensions);
+  const wtdDelta = (parseFloat(wtd) - parseFloat(sasWtd)).toFixed(1);
   return (
     <div style={{ background: "#111827", borderRadius: 10, padding: 16, border: vendor.isSAS ? "1px solid rgba(0,180,216,0.3)" : "1px solid #1e293b" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
@@ -126,9 +173,28 @@ function CompetitorCard({ vendor, dimensions, tiers, sasScores }) {
           </div>
           <div style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>{vendor.revenue}</div>
         </div>
-        <div style={{ textAlign: "right", fontSize: 10, color: "#94a3b8", lineHeight: 1.5 }}>
-          {vendor.analyst.gartnerDSML && vendor.analyst.gartnerDSML !== "—" && <div>DSML: {vendor.analyst.gartnerDSML.split("(")[0].trim()}</div>}
-          {vendor.analyst.g2 && <div>G2: {vendor.analyst.g2.split("(")[0].trim()}</div>}
+        {/* Weighted score badge */}
+        <div style={{ textAlign: "right" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+              <span style={{ fontSize: 22, fontWeight: 800, fontFamily: "monospace", color: wScoreColor(wtd) }}>{wtd}</span>
+              <span style={{ fontSize: 10, color: "#475569", fontFamily: "monospace" }}>/10 wtd</span>
+            </div>
+            {!vendor.isSAS && (
+              <span style={{ fontSize: 10, fontFamily: "monospace", fontWeight: 700, color: parseFloat(wtdDelta) > 0 ? "#E53935" : "#66BB6A" }}>
+                {parseFloat(wtdDelta) > 0 ? `+${wtdDelta}` : wtdDelta} vs SAS ({sasWtd})
+              </span>
+            )}
+            {vendor.isSAS && (
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: "#475569" }}>baseline</span>
+            )}
+            <div style={{ fontSize: 9, color: "#64748b", fontFamily: "monospace" }}>
+              {vendor.analyst.gartnerDSML && vendor.analyst.gartnerDSML !== "—" ? vendor.analyst.gartnerDSML.split("(")[0].trim() : ""}
+            </div>
+            <div style={{ fontSize: 9, color: "#64748b", fontFamily: "monospace" }}>
+              {vendor.analyst.g2 ? vendor.analyst.g2.split("(")[0].trim() : ""}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -269,9 +335,12 @@ export default function App() {
   }, [data, tierFilter]);
 
   const sorted = useMemo(() => {
-    if (sortDim === null) return filtered;
+    if (!data) return filtered;
+    if (sortDim === null)        return filtered;
+    if (sortDim === "weighted")  return [...filtered].sort((a, b) => weightedScore(b.scores, data.dimensions) - weightedScore(a.scores, data.dimensions));
+    if (sortDim === "avg")       return [...filtered].sort((a, b) => avg(b.scores) - avg(a.scores));
     return [...filtered].sort((a, b) => b.scores[sortDim] - a.scores[sortDim]);
-  }, [filtered, sortDim]);
+  }, [filtered, sortDim, data]);
 
   if (error) return (
     <div style={{ background: "#0a0a1a", color: "#E53935", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", padding: 32, textAlign: "center" }}>
@@ -335,6 +404,7 @@ export default function App() {
         <>
           <div style={{ fontSize: 10, color: "#475569", marginBottom: 8 }}>
             Click any column to sort · <span style={{ color: "#00B4D8" }}>Blue ≥ 9</span> · <span style={{ color: "#66BB6A" }}>Green ≥ 7</span> · <span style={{ color: "#E53935" }}>Red ≤ 3</span>
+            &nbsp;·&nbsp; <span style={{ color: "#7dd3fc", fontWeight: 600 }}>WTD</span> = market-priority weighted score (GenAI w10, Governance w9… vs. simple AVG). Click <span style={{ color: "#7dd3fc" }}>WTD ↕</span> to rank by it.
           </div>
           <MatrixView vendors={sorted} dimensions={dimensions} tiers={tiers} sortDim={sortDim} onSortDim={setSortDim} />
         </>
